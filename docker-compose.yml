@@ -1,0 +1,29 @@
+version: "3"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: app
+    image: tutorial-mysql-buffering
+    volumes:
+      - ./app:/root/app
+      - ./.env:/root/.env:ro
+    depends_on:
+        - db
+    env_file:
+      - ./.env
+
+  db:
+    image: mariadb:10.5
+    container_name: db
+    restart: always
+    volumes:
+      - mysql-data:/var/lib/mysql
+    env_file:
+      - ./.env
+
+volumes:
+  mysql-data:
+    driver: local

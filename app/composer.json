@@ -1,0 +1,9 @@
+{
+    "require": {
+        "programster/core-libs": "2.1.*",
+        "programster/mysqli-lib": "^1.0",
+        "irap/multi-query": "^2.0",
+        "ramsey/uuid": "^4.1",
+        "symfony/dotenv": "^5.2"
+    }
+}
