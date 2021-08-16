@@ -38,4 +38,4 @@ docker-compose up
 You will now have the output of the products and substitutions tables in local CSV files.
 
 ## References
-* [MySQL Docs - RENAME TABLE Statement](https://dev.mysql.com/doc/refman/8.0/en/rename-table.html)
+* [EDUCBA -Postgres Rename Table](https://www.educba.com/postgres-rename-table/)
