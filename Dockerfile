@@ -8,7 +8,7 @@ RUN apt install -y software-properties-common apt-transport-https \
   && apt update \
   && apt install php8.0-cli -y
 
-RUN apt-get install php8.0-mysqli -y
+RUN apt-get install php8.0-pgsql -y
 
 
 CMD ["php", "/root/app/main.php"]

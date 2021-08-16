@@ -16,14 +16,16 @@ services:
       - ./.env
 
   db:
-    image: mariadb:10.5
+    image: postgres:13-buster
     container_name: db
     restart: always
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_DATABASE}
     volumes:
-      - mysql-data:/var/lib/mysql
-    env_file:
-      - ./.env
+      - db-data:/var/lib/postgresql/data
 
 volumes:
-  mysql-data:
+  db-data:
     driver: local

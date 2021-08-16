@@ -13,18 +13,17 @@ $dotenv->overload(__DIR__ . '/../.env');
  * Get the database connection. If one already exists, this will return it. If not it will create a new one.
  * @return mysqli - the MySQL database connection.
  */
-function getDb() : mysqli
+function getDb() : Programster\PgsqlObjects\PgSqlConnection
 {
     static $db = null;
 
     if ($db === null)
     {
-        $db = new mysqli(
-            $_ENV['MYSQL_HOST'],
-            $_ENV['MYSQL_USER'],
-            $_ENV['MYSQL_PASSWORD'],
-            $_ENV['MYSQL_DATABASE'],
-            $_ENV['MYSQL_PORT']
+        $db = Programster\PgsqlObjects\PgSqlConnection::create(
+            $_ENV['DB_HOST'],
+            $_ENV['DB_DATABASE'],
+            $_ENV['DB_USER'],
+            $_ENV['DB_PASSWORD']
         );
     }
 
@@ -41,22 +40,22 @@ function createBaseTables()
     $db = getDb();
 
     $queries[] =
-        "CREATE TABLE `products` (
-            `uuid` char(36) NOT NULL,
-            `name` varchar(255) NOT NULL,
-            PRIMARY KEY (`uuid`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8;";
+        'CREATE TABLE "products" (
+            "uuid" uuid NOT NULL,
+            "name" varchar(255) NOT NULL,
+            PRIMARY KEY (uuid)
+        )';
 
     $queries[] =
-        "CREATE TABLE `substitutions` (
-            `uuid` char(36) NOT NULL,
-            `product_uuid` char(36) NOT NULL,
-            `swapped_product_uuid` char(36) NOT NULL,
-            `rank` TINYINT unsigned NOT NULL,
-            PRIMARY KEY (`uuid`),
+        'CREATE TABLE substitutions (
+            "uuid" uuid NOT NULL,
+            product_uuid uuid NOT NULL,
+            swapped_product_uuid uuid NOT NULL,
+            rank INT NOT NULL,
+            PRIMARY KEY (uuid),
             FOREIGN KEY (product_uuid) REFERENCES products(uuid) ON DELETE CASCADE ON UPDATE CASCADE,
             FOREIGN KEY (swapped_product_uuid) REFERENCES products(uuid) ON DELETE CASCADE ON UPDATE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8;";
+        )';
 
     foreach ($queries as $query)
     {
@@ -82,22 +81,22 @@ function createBufferTables()
     $db = getDb();
 
     $queries[] =
-        "CREATE TABLE `products_buffer` (
-            `uuid` char(36) NOT NULL,
-            `name` varchar(255) NOT NULL,
-            PRIMARY KEY (`uuid`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8;";
+        'CREATE TABLE products_buffer (
+            "uuid" uuid NOT NULL,
+            "name" varchar(255) NOT NULL,
+            PRIMARY KEY (uuid)
+        )';
 
     $queries[] =
-        "CREATE TABLE `substitutions_buffer` (
-            `uuid` char(36) NOT NULL,
-            `product_uuid` char(36) NOT NULL,
-            `swapped_product_uuid` char(36) NOT NULL,
-            `rank` TINYINT unsigned NOT NULL,
-            PRIMARY KEY (`uuid`),
+        'CREATE TABLE "substitutions_buffer" (
+            uuid uuid NOT NULL,
+            product_uuid uuid NOT NULL,
+            swapped_product_uuid uuid NOT NULL,
+            rank INT NOT NULL,
+            PRIMARY KEY ("uuid"),
             FOREIGN KEY (product_uuid) REFERENCES products_buffer(uuid) ON DELETE CASCADE ON UPDATE CASCADE,
             FOREIGN KEY (swapped_product_uuid) REFERENCES products_buffer(uuid) ON DELETE CASCADE ON UPDATE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8;";
+        )';
 
     foreach ($queries as $query)
     {
@@ -167,24 +166,19 @@ function renameTables()
         "substitutions_buffer" => "substitutions",
     );
 
-    $statements = [];
+    $renameQueries = "";
 
     foreach ($tableRenames as $from => $to)
     {
-        $statements[] = "`{$from}` TO `{$to}`";
+        $renameQueries .= "ALTER TABLE {$from} RENAME TO {$to};";
     }
-
-    $renameQuery = "RENAME TABLE " . implode(", ", $statements);
 
     $db = getDb();
 
-    $transaction = new iRAP\MultiQuery\Transaction($db, [
-        "DROP TABLE `substitutions`",
-        "DROP TABLE `products`",
-        $renameQuery
-    ]);
+    $transactionQuery = "BEGIN TRANSACTION; DROP TABLE substitutions; DROP TABLE products; {$renameQueries} END TRANSACTION;";
+    $result = $db->query($transactionQuery);
 
-    if ($transaction->wasSuccessful() === false)
+    if ($result === false)
     {
         print "Failed to rename the buffer tables" . PHP_EOL;
         print print_r($transaction->getMultiQueryObject()->getErrors(), true) . PHP_EOL;
@@ -214,7 +208,8 @@ function outputData()
     {
         $query = "SELECT * FROM {$table}";
         $result = $db->query($query);
-        Programster\MysqliLib\MysqliLib::convertResultToCsv($result, __DIR__ . "/{$table}.csv", true);
+        $rows = pg_fetch_all($result);
+        Programster\CoreLibs\CsvLib::convertArrayToCsv(__DIR__ . "/{$table}.csv", $rows, true);
         print "{$table} outputted to {$table}.csv" . PHP_EOL;
     }
 }
@@ -236,7 +231,7 @@ function resetDatabase()
 
     foreach ($tables as $table)
     {
-        $query = "DROP TABLE IF EXISTS `{$table}`";
+        $query = "DROP TABLE IF EXISTS \"{$table}\"";
         $result = $db->query($query);
 
         if ($result === false)
@@ -271,7 +266,7 @@ function importData() : void
             $products[] = $newProduct;
         }
 
-        $batchInsertProductsQuery = Programster\MysqliLib\MysqliLib::generateBatchInsertQuery($newProducts, "products_buffer", $db);
+        $batchInsertProductsQuery = \Programster\PgsqlObjects\Utils::generateBatchInsertQuery($db, "products_buffer", $newProducts);
         $insertProductsResult = $db->query($batchInsertProductsQuery);
 
         if ($insertProductsResult === false)
@@ -294,7 +289,7 @@ function importData() : void
         if (count($substitutions) > 1000)
         {
             // batch insert subs and empty the buffer
-            $batchInsertSubsQuery = Programster\MysqliLib\MysqliLib::generateBatchInsertQuery($substitutions, "substitutions_buffer", $db);
+            $batchInsertSubsQuery = \Programster\PgsqlObjects\Utils::generateBatchInsertQuery($db, "substitutions_buffer", $substitutions);
             $subsInsertResult = $db->query($batchInsertSubsQuery);
             if ($subsInsertResult === false)
             {
@@ -310,7 +305,12 @@ function importData() : void
     if (count($substitutions) > 0)
     {
         // now batch insert the subs
-        $batchInsertSubsQuery = Programster\MysqliLib\MysqliLib::generateBatchInsertQuery($substitutions, "substitutions_buffer", $db);
+        $batchInsertSubsQuery = \Programster\PgsqlObjects\Utils::generateBatchInsertQuery(
+            $db,
+            "substitutions_buffer",
+            $substitutions
+        );
+
         $subsInsertResult = $db->query($batchInsertSubsQuery);
 
         if ($subsInsertResult === false)
